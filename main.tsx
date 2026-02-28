@@ -899,12 +899,24 @@ export default function App() {
                     <div key={wIdx} className="flex flex-col items-center gap-1 group/word relative">
                       <motion.span
                         onMouseEnter={() => !isFineTuning && handleWordHover(word, sIdx, wIdx)}
-                        onClick={() => isFineTuning && playTeacherSegment(ts.start, ts.end, 0.1)}
+                        onClick={() => {
+                          if (isFineTuning) {
+                            playTeacherSegment(ts.start, ts.end, 0.1);
+                          } else {
+                            // 手機點擊直接觸發發音與翻譯
+                            playAudio(word.replace(/[.,:!?]/g, ""), false, sIdx, wIdx);
+                          }
+                        }}
                         animate={isActive ? { scale: 1.15, color: "#059669" } : { scale: 1, color: "#1a2a3a" }}
-                        className={`cursor-help text-xl md:text-2xl font-medium transition-colors duration-200 py-1 px-1.5 rounded-md ${
+                        className={`cursor-help text-xl md:text-2xl font-medium transition-colors duration-200 py-1 px-1.5 rounded-md select-none touch-none active:bg-emerald-100 ${
                           isActive ? 'bg-emerald-50 ring-2 ring-emerald-200' : 
                           isFineTuning ? 'bg-amber-50 border border-amber-200' : 'hover:bg-emerald-50'
                         }`}
+                        style={{ 
+                          WebkitUserSelect: 'none', 
+                          WebkitTouchCallout: 'none',
+                          userSelect: 'none'
+                        }}
                       >
                         {word}
                       </motion.span>
