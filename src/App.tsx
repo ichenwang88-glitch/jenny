@@ -110,7 +110,6 @@ const deleteAudioFromDB = async () => {
 export default function App() {
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasKey, setHasKey] = useState<boolean>(false);
   const [teacherAudio, setTeacherAudio] = useState<HTMLAudioElement | null>(null);
   const [teacherBuffer, setTeacherBuffer] = useState<AudioBuffer | null>(null);
   const [isAligning, setIsAligning] = useState(false);
@@ -118,7 +117,6 @@ export default function App() {
   const [alignIndex, setAlignIndex] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(0.7);
   const [currentTime, setCurrentTime] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isFineTuning, setIsFineTuning] = useState(false);
   const [isTeacherMode, setIsTeacherMode] = useState(false);
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
@@ -250,14 +248,6 @@ export default function App() {
   });
 
   useEffect(() => {
-    const checkKey = async () => {
-      if ((window as any).aistudio?.hasSelectedApiKey) {
-        const selected = await (window as any).aistudio.hasSelectedApiKey();
-        setHasKey(selected);
-      }
-    };
-    checkKey();
-
     // Load saved audio from IndexedDB
     const loadSavedAudio = async () => {
       try {
@@ -278,14 +268,6 @@ export default function App() {
     };
     loadSavedAudio();
   }, []);
-
-  const handleOpenKey = async () => {
-    if ((window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      setHasKey(true);
-      setError(null);
-    }
-  };
 
   // Initialize AudioContext on first user interaction
   useEffect(() => {
@@ -659,39 +641,35 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#fdfcf8] text-[#2c3e50] font-sans selection:bg-emerald-100">
-      {/* Only show processing or critical error during upload */}
+      {/* Only show critical error during upload */}
       <AnimatePresence>
-        {(error || isProcessing) && (
+        {error && (
           <motion.div 
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
             className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4"
           >
-            <div className={`shadow-xl rounded-2xl p-4 flex items-center justify-between gap-4 border ${
-              isProcessing ? 'bg-white border-emerald-100' : 'bg-red-50 border-red-100'
-            }`}>
+            <div className="shadow-xl rounded-2xl p-4 flex items-center justify-between gap-4 border bg-red-50 border-red-100">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-full ${isProcessing ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                  {isProcessing ? <Sparkles size={20} className="animate-spin" /> : <Volume2 size={20} />}
+                <div className="p-2 rounded-full bg-red-100 text-red-600">
+                  <Volume2 size={20} />
                 </div>
                 <div>
-                  <p className={`text-sm font-bold ${isProcessing ? 'text-slate-800' : 'text-red-800'}`}>
-                    {isProcessing ? "正在分析老師的聲音..." : "分析失敗"}
+                  <p className="text-sm font-bold text-red-800">
+                    發生錯誤
                   </p>
-                  <p className={`text-xs ${isProcessing ? 'text-slate-500' : 'text-red-600'}`}>
-                    {isProcessing ? "正在幫您把 MP3 拆解成單字..." : "免費額度已達上限，請稍後再試或設定您的 Key。"}
+                  <p className="text-xs text-red-600">
+                    {error}
                   </p>
                 </div>
               </div>
-              {error && (
-                <button 
-                  onClick={handleOpenKey}
-                  className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors shrink-0"
-                >
-                  設定 Key
-                </button>
-              )}
+              <button 
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-600 transition-colors"
+              >
+                關閉
+              </button>
             </div>
           </motion.div>
         )}
@@ -883,7 +861,7 @@ export default function App() {
             </div>
           )}
           
-          {teacherAudio && !isProcessing && !isAligning && (
+          {teacherAudio && !isAligning && (
             <span className="text-xs text-slate-400 italic">
               Using teacher's voice. If words are off, use "Manual Alignment".
             </span>
@@ -921,12 +899,24 @@ export default function App() {
                     <div key={wIdx} className="flex flex-col items-center gap-1 group/word relative">
                       <motion.span
                         onMouseEnter={() => !isFineTuning && handleWordHover(word, sIdx, wIdx)}
-                        onClick={() => isFineTuning && playTeacherSegment(ts.start, ts.end, 0.1)}
+                        onClick={() => {
+                          if (isFineTuning) {
+                            playTeacherSegment(ts.start, ts.end, 0.1);
+                          } else {
+                            // 手機點擊直接觸發發音與翻譯
+                            playAudio(word.replace(/[.,:!?]/g, ""), false, sIdx, wIdx);
+                          }
+                        }}
                         animate={isActive ? { scale: 1.15, color: "#059669" } : { scale: 1, color: "#1a2a3a" }}
-                        className={`cursor-help text-xl md:text-2xl font-medium transition-colors duration-200 py-1 px-1.5 rounded-md ${
+                        className={`cursor-help text-xl md:text-2xl font-medium transition-colors duration-200 py-1 px-1.5 rounded-md select-none touch-none active:bg-emerald-100 ${
                           isActive ? 'bg-emerald-50 ring-2 ring-emerald-200' : 
                           isFineTuning ? 'bg-amber-50 border border-amber-200' : 'hover:bg-emerald-50'
                         }`}
+                        style={{ 
+                          WebkitUserSelect: 'none', 
+                          WebkitTouchCallout: 'none',
+                          userSelect: 'none'
+                        }}
                       >
                         {word}
                       </motion.span>
