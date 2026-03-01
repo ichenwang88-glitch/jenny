@@ -894,8 +894,18 @@ export default function App() {
                   return (
                     <div key={wIdx} className="flex flex-col items-center gap-1 group/word relative">
                       <motion.span
-                        onMouseEnter={() => !isFineTuning && handleWordHover(word, sIdx, wIdx)}
+                        onMouseEnter={() => {
+                          // 只有在非觸控裝置（滑鼠）才觸發 hover 發音
+                          if (!window.matchMedia('(pointer: coarse)').matches && !isFineTuning) {
+                            handleWordHover(word, sIdx, wIdx);
+                          }
+                        }}
                         onClick={() => {
+                          // 點擊時清除任何待發送的 hover 發音，防止重複播放
+                          if (hoverTimeoutRef.current) {
+                            clearTimeout(hoverTimeoutRef.current);
+                          }
+                          
                           if (isFineTuning) {
                             playTeacherSegment(ts.start, ts.end, 0.1);
                           } else {
