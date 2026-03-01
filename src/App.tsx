@@ -1008,7 +1008,7 @@ export default function App() {
                   );
                 })}
                 </div>
-                <div className="text-sm text-slate-400 font-medium italic mt-2 border-t border-slate-50 pt-2">
+                <div className="text-lg text-slate-400 font-medium italic mt-2 border-t border-slate-50 pt-2">
                   {CONTENT_DATA[sIdx].zh}
                 </div>
               </div>
