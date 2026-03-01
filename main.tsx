@@ -4,7 +4,6 @@
  */
 
 import { useState, useRef, useEffect, useCallback, ChangeEvent, useMemo } from 'react';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { Volume2, Play, BookOpen, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DEFAULT_TIMESTAMPS } from './data/timestamps';
@@ -45,9 +44,6 @@ const WORD_DICT: Record<string, string> = {
 };
 
 const SENTENCES = CONTENT_DATA.map(d => d.en);
-
-// Initialize Gemini API - we'll create instances dynamically to use the latest key
-const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 // IndexedDB helpers for persisting audio file
 const DB_NAME = 'SpeechBuddyDB';
