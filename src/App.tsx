@@ -929,7 +929,29 @@ export default function App() {
                             handleWordHover(word, sIdx, wIdx);
                           }
                         }}
+                        onTouchEnd={(e) => {
+                          // 觸控裝置專用：使用 touchend 而不是 click
+                          e.preventDefault(); // 阻止後續的 click 事件
+                          
+                          // 清除任何待發送的 hover 發音
+                          if (hoverTimeoutRef.current) {
+                            clearTimeout(hoverTimeoutRef.current);
+                          }
+                          
+                          if (isFineTuning) {
+                            playTeacherSegment(ts.start, ts.end, 0.1);
+                          } else {
+                            playAudio(word.replace(/[.,:!?]/g, ""), false, sIdx, wIdx);
+                          }
+                        }}
                         onClick={(e) => {
+                          // 只處理非觸控的點擊（滑鼠點擊）
+                          // 觸控裝置的點擊已經由 onTouchEnd 處理
+                          if (isTouchDevice) {
+                            e.preventDefault();
+                            return;
+                          }
+                          
                           // 點擊時清除任何待發送的 hover 發音，防止重複播放
                           if (hoverTimeoutRef.current) {
                             clearTimeout(hoverTimeoutRef.current);
@@ -993,7 +1015,15 @@ export default function App() {
 
               {/* Sentence Play Button */}
               <button
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  playAudio(sentence, true, sIdx);
+                }}
                 onClick={(e) => {
+                  if (isTouchDevice) {
+                    e.preventDefault();
+                    return;
+                  }
                   playAudio(sentence, true, sIdx);
                 }}
                 className={`absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all duration-300 ${
