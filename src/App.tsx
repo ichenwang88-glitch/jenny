@@ -116,6 +116,7 @@ export default function App() {
   const [isFineTuning, setIsFineTuning] = useState(false);
   const [isTeacherMode, setIsTeacherMode] = useState(false);
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const isPlayingRef = useRef<string | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -125,6 +126,7 @@ export default function App() {
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const activeGainRef = useRef<GainNode | null>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPlayTimeRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -263,6 +265,16 @@ export default function App() {
       }
     };
     loadSavedAudio();
+  }, []);
+
+  // Detect touch device
+  useEffect(() => {
+    const detectTouch = () => {
+      setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    };
+    detectTouch();
+    window.addEventListener('touchstart', detectTouch, { once: true });
+    return () => window.removeEventListener('touchstart', detectTouch);
   }, []);
 
   // Initialize AudioContext on first user interaction
@@ -473,9 +485,16 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const playTeacherSegment = (start: number, end: number, padding: number = 0) => {
+  const playTeacherSegment = (start: number, end: number, padding: number = 0, skipDebounce: boolean = false) => {
     if (!teacherBuffer || !audioContextRef.current) return;
     
+    // 額外防抖保護：防止快速連續調用
+    if (!skipDebounce) {
+      const nowTime = Date.now();
+      if (nowTime - lastPlayTimeRef.current < 600) return;
+      lastPlayTimeRef.current = nowTime;
+    }
+
     initAudio();
     
     // Stop any current playback with a quick fade out
@@ -522,6 +541,13 @@ export default function App() {
   };
 
   const playAudio = async (text: string, isSentence: boolean = false, sIdx?: number, wIdx?: number) => {
+    // 強力防抖：防止手機端重複觸發（600ms 內只允許播放一次）
+    const now = Date.now();
+    if (now - lastPlayTimeRef.current < 600) {
+      return;
+    }
+    lastPlayTimeRef.current = now;
+
     // Stop any existing animation
     if (requestRef.current) {
       cancelAnimationFrame(requestRef.current);
@@ -535,7 +561,7 @@ export default function App() {
         const lastWord = wordTimestamps[range.end];
         
         if (firstWord && lastWord) {
-          playTeacherSegment(firstWord.start, lastWord.end, 0.05);
+          playTeacherSegment(firstWord.start, lastWord.end, 0.05, true);
           setIsSpeaking(text);
           isPlayingRef.current = text;
 
@@ -582,7 +608,7 @@ export default function App() {
         const globalIdx = range.start + wIdx;
         const timestamp = wordTimestamps[globalIdx];
         if (timestamp) {
-          playTeacherSegment(timestamp.start, timestamp.end, 0.05);
+          playTeacherSegment(timestamp.start, timestamp.end, 0.05, true);
           setIsSpeaking(text);
           isPlayingRef.current = text;
           setActiveWordIndex(globalIdx);
@@ -594,7 +620,7 @@ export default function App() {
         const timestampIdx = wordTimestamps.findIndex(t => t.word === cleanText);
         if (timestampIdx !== -1) {
           const timestamp = wordTimestamps[timestampIdx];
-          playTeacherSegment(timestamp.start, timestamp.end, 0.05);
+          playTeacherSegment(timestamp.start, timestamp.end, 0.05, true);
           setIsSpeaking(text);
           isPlayingRef.current = text;
           setActiveWordIndex(timestampIdx);
@@ -622,6 +648,9 @@ export default function App() {
   };
 
   const handleWordHover = (word: string, sIdx: number, wIdx: number) => {
+    // 如果最近才剛播放過（例如點擊觸發的），就不要再觸發 hover 發音
+    if (Date.now() - lastPlayTimeRef.current < 600) return;
+
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
     }
@@ -894,12 +923,21 @@ export default function App() {
                   return (
                     <div key={wIdx} className="flex flex-col items-center gap-1 group/word relative">
                       <motion.span
-                        onMouseEnter={() => !isFineTuning && handleWordHover(word, sIdx, wIdx)}
-                        onClick={() => {
+                        onMouseEnter={() => {
+                          // 只有在非觸控裝置（滑鼠）才觸發 hover 發音
+                          if (!isTouchDevice && !isFineTuning) {
+                            handleWordHover(word, sIdx, wIdx);
+                          }
+                        }}
+                        onClick={(e) => {
+                          // 點擊時清除任何待發送的 hover 發音，防止重複播放
+                          if (hoverTimeoutRef.current) {
+                            clearTimeout(hoverTimeoutRef.current);
+                          }
+                          
                           if (isFineTuning) {
                             playTeacherSegment(ts.start, ts.end, 0.1);
                           } else {
-                            // 手機點擊直接觸發發音與翻譯
                             playAudio(word.replace(/[.,:!?]/g, ""), false, sIdx, wIdx);
                           }
                         }}
@@ -955,7 +993,9 @@ export default function App() {
 
               {/* Sentence Play Button */}
               <button
-                onClick={() => playAudio(sentence, true, sIdx)}
+                onClick={(e) => {
+                  playAudio(sentence, true, sIdx);
+                }}
                 className={`absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all duration-300 ${
                   isSpeaking === sentence 
                     ? 'bg-emerald-500 text-white scale-110 shadow-lg shadow-emerald-200' 
