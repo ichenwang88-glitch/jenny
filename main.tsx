@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback, ChangeEvent, useMemo } from 'react';
+import { GoogleGenAI, Modality } from "@google/genai";
 import { Volume2, Play, BookOpen, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DEFAULT_TIMESTAMPS } from './data/timestamps';
@@ -44,6 +45,9 @@ const WORD_DICT: Record<string, string> = {
 };
 
 const SENTENCES = CONTENT_DATA.map(d => d.en);
+
+// Initialize Gemini API - we'll create instances dynamically to use the latest key
+const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 // IndexedDB helpers for persisting audio file
 const DB_NAME = 'SpeechBuddyDB';
@@ -125,7 +129,6 @@ export default function App() {
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const activeGainRef = useRef<GainNode | null>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastPlayTimeRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -474,16 +477,9 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const playTeacherSegment = (start: number, end: number, padding: number = 0, skipDebounce: boolean = false) => {
+  const playTeacherSegment = (start: number, end: number, padding: number = 0) => {
     if (!teacherBuffer || !audioContextRef.current) return;
     
-    // 額外防抖保護：防止快速連續調用
-    if (!skipDebounce) {
-      const nowTime = Date.now();
-      if (nowTime - lastPlayTimeRef.current < 600) return;
-      lastPlayTimeRef.current = nowTime;
-    }
-
     initAudio();
     
     // Stop any current playback with a quick fade out
@@ -530,13 +526,6 @@ export default function App() {
   };
 
   const playAudio = async (text: string, isSentence: boolean = false, sIdx?: number, wIdx?: number) => {
-    // 強力防抖：防止手機端重複觸發（600ms 內只允許播放一次）
-    const now = Date.now();
-    if (now - lastPlayTimeRef.current < 600) {
-      return;
-    }
-    lastPlayTimeRef.current = now;
-
     // Stop any existing animation
     if (requestRef.current) {
       cancelAnimationFrame(requestRef.current);
@@ -550,7 +539,7 @@ export default function App() {
         const lastWord = wordTimestamps[range.end];
         
         if (firstWord && lastWord) {
-          playTeacherSegment(firstWord.start, lastWord.end, 0.05, true);
+          playTeacherSegment(firstWord.start, lastWord.end, 0.05);
           setIsSpeaking(text);
           isPlayingRef.current = text;
 
@@ -597,7 +586,7 @@ export default function App() {
         const globalIdx = range.start + wIdx;
         const timestamp = wordTimestamps[globalIdx];
         if (timestamp) {
-          playTeacherSegment(timestamp.start, timestamp.end, 0.05, true);
+          playTeacherSegment(timestamp.start, timestamp.end, 0.05);
           setIsSpeaking(text);
           isPlayingRef.current = text;
           setActiveWordIndex(globalIdx);
@@ -609,7 +598,7 @@ export default function App() {
         const timestampIdx = wordTimestamps.findIndex(t => t.word === cleanText);
         if (timestampIdx !== -1) {
           const timestamp = wordTimestamps[timestampIdx];
-          playTeacherSegment(timestamp.start, timestamp.end, 0.05, true);
+          playTeacherSegment(timestamp.start, timestamp.end, 0.05);
           setIsSpeaking(text);
           isPlayingRef.current = text;
           setActiveWordIndex(timestampIdx);
@@ -637,9 +626,6 @@ export default function App() {
   };
 
   const handleWordHover = (word: string, sIdx: number, wIdx: number) => {
-    // 如果最近才剛播放過（例如點擊觸發的），就不要再觸發 hover 發音
-    if (Date.now() - lastPlayTimeRef.current < 600) return;
-
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
     }
@@ -912,35 +898,13 @@ export default function App() {
                   return (
                     <div key={wIdx} className="flex flex-col items-center gap-1 group/word relative">
                       <motion.span
-                        onMouseEnter={() => {
-                          // 只有在非觸控裝置（滑鼠）才觸發 hover 發音
-                          if (!window.matchMedia('(pointer: coarse)').matches && !isFineTuning) {
-                            handleWordHover(word, sIdx, wIdx);
-                          }
-                        }}
-                        onClick={() => {
-                          // 點擊時清除任何待發送的 hover 發音，防止重複播放
-                          if (hoverTimeoutRef.current) {
-                            clearTimeout(hoverTimeoutRef.current);
-                          }
-                          
-                          if (isFineTuning) {
-                            playTeacherSegment(ts.start, ts.end, 0.1);
-                          } else {
-                            // 手機點擊直接觸發發音與翻譯
-                            playAudio(word.replace(/[.,:!?]/g, ""), false, sIdx, wIdx);
-                          }
-                        }}
+                        onMouseEnter={() => !isFineTuning && handleWordHover(word, sIdx, wIdx)}
+                        onClick={() => isFineTuning && playTeacherSegment(ts.start, ts.end, 0.1)}
                         animate={isActive ? { scale: 1.15, color: "#059669" } : { scale: 1, color: "#1a2a3a" }}
-                        className={`cursor-help text-xl md:text-2xl font-medium transition-colors duration-200 py-1 px-1.5 rounded-md select-none touch-none active:bg-emerald-100 ${
+                        className={`cursor-help text-xl md:text-2xl font-medium transition-colors duration-200 py-1 px-1.5 rounded-md ${
                           isActive ? 'bg-emerald-50 ring-2 ring-emerald-200' : 
                           isFineTuning ? 'bg-amber-50 border border-amber-200' : 'hover:bg-emerald-50'
                         }`}
-                        style={{ 
-                          WebkitUserSelect: 'none', 
-                          WebkitTouchCallout: 'none',
-                          userSelect: 'none'
-                        }}
                       >
                         {word}
                       </motion.span>
